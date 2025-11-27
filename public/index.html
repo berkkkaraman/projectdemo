@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Yapay Zeka Analizi</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 50px; }
+        #sonuc { margin-top: 20px; font-weight: bold; font-size: 20px; color: green; }
+        img { max-width: 300px; margin-top: 20px; display: none; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Resim Yükle ve Analiz Et</h1>
+    <input type="file" id="resimInput" accept="image/*">
+    <button onclick="analizEt()">Analiz Et</button>
+    
+    <br>
+    <img id="onizleme" src="" alt="Önizleme">
+    <div id="sonuc"></div>
+
+    <script>
+        async function analizEt() {
+            const input = document.getElementById('resimInput');
+            const sonucDiv = document.getElementById('sonuc');
+            const img = document.getElementById('onizleme');
+
+            if (input.files.length === 0) {
+                alert("Lütfen bir resim seçin!");
+                return;
+            }
+
+            img.src = URL.createObjectURL(input.files[0]);
+            img.style.display = "inline-block";
+            sonucDiv.innerText = "⏳ Analiz yapılıyor...";
+            sonucDiv.style.color = "blue";
+
+            const formData = new FormData();
+            formData.append('resim', input.files[0]);
+
+            try {
+                const response = await fetch('http://localhost:3000/analiz-et', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                console.log("Sunucudan Gelen Veri:", data); // Tarayıcı konsoluna yazdırır (F12)
+
+                // Veriyi kontrol ederek yazdıralım
+                if (data.tahmin_adi) {
+                    sonucDiv.innerText = "Sonuç: " + data.tahmin_adi;
+                    sonucDiv.style.color = "green";
+                } else if (data.tahmin_index !== undefined) {
+                    sonucDiv.innerText = "Sonuç Index Numarası: " + data.tahmin_index + "\n(Python kodunda isim listesi tanımlanmamış)";
+                    sonucDiv.style.color = "orange";
+                } else {
+                    sonucDiv.innerText = "Bilinmeyen Cevap: " + JSON.stringify(data);
+                    sonucDiv.style.color = "red";
+                }
+                
+            } catch (error) {
+                sonucDiv.innerText = "Bağlantı Hatası!";
+                console.error(error);
+            }
+        }
+    </script>
+</body>
+</html>

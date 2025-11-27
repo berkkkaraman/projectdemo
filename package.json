@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "@tensorflow/tfjs-node": "^4.22.0",
+    "axios": "^1.13.2",
+    "express": "^5.1.0",
+    "form-data": "^4.0.5",
+    "multer": "^2.0.2"
+  }
+}
