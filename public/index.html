@@ -2,25 +2,45 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>Yapay Zeka Analizi</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yapay Zeka Sağlık Analizi</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 50px; }
-        #sonuc { margin-top: 20px; font-weight: bold; font-size: 20px; color: green; }
-        img { max-width: 300px; margin-top: 20px; display: none; border-radius: 10px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; padding: 40px; background-color: #f4f4f9; }
+        .container { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 500px; margin: 0 auto; }
+        h1 { color: #333; }
+        select, input[type=file], button { width: 100%; padding: 10px; margin-top: 10px; border-radius: 5px; border: 1px solid #ddd; }
+        button { background-color: #007bff; color: white; font-weight: bold; cursor: pointer; border: none; margin-top: 20px;}
+        button:hover { background-color: #0056b3; }
+        #onizleme { max-width: 100%; margin-top: 20px; display: none; border-radius: 10px; border: 2px solid #eee; }
+        #sonuc { margin-top: 20px; font-weight: bold; font-size: 18px; padding: 15px; border-radius: 5px; }
     </style>
 </head>
 <body>
-    <h1>Resim Yükle ve Analiz Et</h1>
-    <input type="file" id="resimInput" accept="image/*">
-    <button onclick="analizEt()">Analiz Et</button>
-    
-    <br>
-    <img id="onizleme" src="" alt="Önizleme">
-    <div id="sonuc"></div>
+
+    <div class="container">
+        <h1>🏥 AI Tanı Sistemi</h1>
+        
+        <label for="modelSec" style="float:left; font-weight:bold;">Model Seçiniz:</label>
+        <select id="modelSec">
+            <!-- value kısımları Python'daki anahtarlarla AYNI olmalı -->
+            <option value="model_kanser">Genel Kanser Tarama (modelim.h5)</option>
+            <option value="model_akciger">Akciğer Analizi (lungmodel.h5)</option>
+        </select>
+
+        <br><br>
+        <label for="resimInput" style="float:left; font-weight:bold;">Röntgen/Resim Yükle:</label>
+        <input type="file" id="resimInput" accept="image/*">
+        
+        <button onclick="analizEt()">Analiz Başlat</button>
+        
+        <img id="onizleme" src="" alt="Önizleme">
+        <div id="sonuc"></div>
+    </div>
 
     <script>
         async function analizEt() {
             const input = document.getElementById('resimInput');
+            const modelSelect = document.getElementById('modelSec');
             const sonucDiv = document.getElementById('sonuc');
             const img = document.getElementById('onizleme');
 
@@ -29,13 +49,18 @@
                 return;
             }
 
+            // Önizleme
             img.src = URL.createObjectURL(input.files[0]);
-            img.style.display = "inline-block";
-            sonucDiv.innerText = "⏳ Analiz yapılıyor...";
-            sonucDiv.style.color = "blue";
+            img.style.display = "block";
+            sonucDiv.innerText = "⏳ Yapay Zeka Düşünüyor...";
+            sonucDiv.style.backgroundColor = "#fff3cd";
+            sonucDiv.style.color = "#856404";
 
             const formData = new FormData();
             formData.append('resim', input.files[0]);
+            
+            // Seçilen modeli gönderiyoruz (model_kanser veya model_akciger)
+            formData.append('model_secimi', modelSelect.value);
 
             try {
                 const response = await fetch('http://localhost:3000/analiz-et', {
@@ -44,22 +69,23 @@
                 });
                 
                 const data = await response.json();
-                console.log("Sunucudan Gelen Veri:", data); // Tarayıcı konsoluna yazdırır (F12)
 
-                // Veriyi kontrol ederek yazdıralım
                 if (data.tahmin_adi) {
-                    sonucDiv.innerText = "Sonuç: " + data.tahmin_adi;
-                    sonucDiv.style.color = "green";
-                } else if (data.tahmin_index !== undefined) {
-                    sonucDiv.innerText = "Sonuç Index Numarası: " + data.tahmin_index + "\n(Python kodunda isim listesi tanımlanmamış)";
-                    sonucDiv.style.color = "orange";
+                    sonucDiv.innerText = "✅ SONUÇ: " + data.tahmin_adi;
+                    sonucDiv.style.backgroundColor = "#d4edda";
+                    sonucDiv.style.color = "#155724";
+                } else if (data.error) {
+                    sonucDiv.innerText = "❌ HATA: " + data.error;
+                    sonucDiv.style.backgroundColor = "#f8d7da";
+                    sonucDiv.style.color = "#721c24";
                 } else {
-                    sonucDiv.innerText = "Bilinmeyen Cevap: " + JSON.stringify(data);
-                    sonucDiv.style.color = "red";
+                    sonucDiv.innerText = "⚠️ Beklenmeyen Cevap: " + JSON.stringify(data);
                 }
                 
             } catch (error) {
-                sonucDiv.innerText = "Bağlantı Hatası!";
+                sonucDiv.innerText = "❌ Sunucuya Bağlanılamadı!";
+                sonucDiv.style.backgroundColor = "#f8d7da";
+                sonucDiv.style.color = "#721c24";
                 console.error(error);
             }
         }

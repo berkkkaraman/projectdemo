@@ -5,8 +5,8 @@ const FormData = require('form-data');
 const fs = require('fs');
 
 const app = express();
-app.use(express.static('public')); // 👈 BU SATIRI EKLE
-const upload = multer({ dest: 'uploads/' }); // Geçici klasör
+app.use(express.static('public')); // HTML'i sunmak için
+const upload = multer({ dest: 'uploads/' });
 const PORT = 3000;
 const PYTHON_API_URL = 'http://127.0.0.1:5000/predict';
 
@@ -15,25 +15,31 @@ app.post('/analiz-et', upload.single('resim'), async (req, res) => {
         return res.status(400).json({ error: 'Lütfen bir resim yükleyin.' });
     }
 
+    // HTML'den gelen model seçimini al
+    const modelTuru = req.body.model_secimi; 
+
     try {
-        // Resmi Python servisine gönder
         const form = new FormData();
         form.append('file', fs.createReadStream(req.file.path));
+        // Model türünü Python'a ilet
+        form.append('model_turu', modelTuru); 
 
         const response = await axios.post(PYTHON_API_URL, form, {
             headers: { ...form.getHeaders() }
         });
 
-        // Geçici dosyayı sil
         fs.unlinkSync(req.file.path);
-
-        // Sonucu dön
         res.json(response.data);
 
     } catch (error) {
         console.error("Hata:", error.message);
         if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-        res.status(500).json({ error: 'Python servisine ulaşılamadı.' });
+        
+        // Hata detayını frontend'e gönder
+        res.status(500).json({ 
+            error: 'İşlem başarısız.', 
+            detay: error.response ? error.response.data : error.message 
+        });
     }
 });
 

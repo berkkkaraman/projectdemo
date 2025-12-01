@@ -1,12 +1,10 @@
 import os
-# 👇 BU İKİ SATIR ÇOK ÖNEMLİ! TENSORFLOW IMPORT EDİLMEDEN ÖNCE YAZILMALI
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
 from flask import Flask, request, jsonify
 import tensorflow as tf
 from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing import image
 import numpy as np
 from PIL import Image
 import io
@@ -14,68 +12,115 @@ import io
 app = Flask(__name__)
 
 # --- AYARLAR ---
-MODEL_PATH = 'modelim.h5'
-IMG_SIZE = (224, 224) 
+MODEL_CONFIG = {
+    'model_kanser': {
+        'dosya': 'modelim.h5',
+        'etiketler': ["Kanser", "Sağlıklı"],
+        'boyut': (224, 224),
+        'renk': 'RGB' # 3 Kanal
+    },
+    'model_akciger': {
+        'dosya': 'lungmodel.h5',
+        'etiketler': ["kanser","sağlıklı"], 
+        'boyut': (224,224),
+        'renk': 'RGB' # Eğer model siyah beyaz ise burayı 'L' yapmalısın!
+    }
+}
+# ---------------
 
-# 👇 BURAYI GÜNCELLEDİM: 0. sıraya Kanser, 1. sıraya Sağlıklı yazdım.
-CLASS_NAMES = ["Kanser", "Sağlıklı"] 
-# ----------------
+YUKLENEN_MODELLER = {}
 
-print(f"TensorFlow Version: {tf.__version__}")
-print("⏳ Model yükleniyor (Legacy Mode)...")
-
-try:
-    # compile=False diyerek gereksiz parametre hatalarını engelliyoruz
-    model = load_model(MODEL_PATH, compile=False)
-    print("✅ Model Başarıyla Yüklendi!")
-
-except Exception as e:
-    print("\n❌ HATA: Model yine yüklenemedi.")
-    print(f"Hata Detayı: {e}")
-    exit()
-
-def prepare_image(img_bytes):
+print("⏳ Modeller yükleniyor...")
+for key, config in MODEL_CONFIG.items():
     try:
-        img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
-        img = img.resize(IMG_SIZE)
-        img_array = np.array(img)
-        img_array = img_array / 255.0
-        img_array = np.expand_dims(img_array, axis=0)
-        return img_array
+        if os.path.exists(config['dosya']):
+            print(f"   -> {key} yükleniyor...")
+            YUKLENEN_MODELLER[key] = load_model(config['dosya'], compile=False)
+        else:
+            print(f"⚠️ {config['dosya']} bulunamadı!")
     except Exception as e:
-        print(f"Resim işleme hatası: {e}")
-        raise e
+        print(f"❌ {key} HATA: {e}")
+
+print("✅ Hazır!")
+
+def prepare_image(img_bytes, hedef_boyut, renk_modu):
+    img = Image.open(io.BytesIO(img_bytes))
+    
+    # Renk ayarı (RGB = Renkli, L = Siyah Beyaz)
+    img = img.convert(renk_modu)
+    
+    # Boyutlandırma
+    img = img.resize(hedef_boyut)
+    img_array = np.array(img)
+    img_array = img_array / 255.0
+    
+    # Eğer siyah beyaz ise (512, 512) -> (512, 512, 1) yapmalıyız
+    if renk_modu == 'L':
+        img_array = np.expand_dims(img_array, axis=-1)
+        
+    img_array = np.expand_dims(img_array, axis=0)
+    return img_array
 
 @app.route('/predict', methods=['POST'])
 def predict():
     if 'file' not in request.files:
         return jsonify({'error': 'Resim yok'}), 400
     
-    file = request.files['file']
+    secilen_model_key = request.form.get('model_turu')
+    
+    if secilen_model_key not in YUKLENEN_MODELLER:
+        return jsonify({'error': f"Model bulunamadı: {secilen_model_key}"}), 400
+
+    model = YUKLENEN_MODELLER[secilen_model_key]
+    ayarlar = MODEL_CONFIG[secilen_model_key]
     
     try:
-        processed_image = prepare_image(file.read())
+        file = request.files['file']
+        
+        # Resmi hazırla
+        processed_image = prepare_image(file.read(), ayarlar['boyut'], ayarlar['renk'])
+        
+        # 🛠️ DEBUG: Terminale bilgi yazdır (Hatanın sebebi burada görünecek)
+        print(f"\n🔍 ANALİZ BAŞLADI: {secilen_model_key}")
+        print(f"   Giriş Resmi Şekli (Shape): {processed_image.shape}")
+        
+        # Tahmin yap
         prediction = model.predict(processed_image)
-        result = prediction[0].tolist()
+        result = prediction[0]
         
-        # En yüksek ihtimalin indeksini bul (0 veya 1)
-        max_index = int(np.argmax(result))
+        print(f"   Model Çıktısı (Raw): {result}") # Modelin ne döndürdüğünü görelim
+
+        # SONUÇ YORUMLAMA (Binary vs Multi-class)
+        tahmin_adi = ""
+        max_index = 0
         
-        # 👇 YENİ KISIM: İndeksi yazıya çeviriyoruz
-        # Eğer max_index 0 ise "Kanser", 1 ise "Sağlıklı" değerini alır.
-        if max_index < len(CLASS_NAMES):
-            tahmin_adi = CLASS_NAMES[max_index]
+        # Eğer tek bir çıktı varsa (Örn: [0.98]) -> Bu Binary Classification'dır
+        if len(result) == 1:
+            skor = result[0]
+            max_index = 0 if skor < 0.5 else 1 # 0.5 altı birinci sınıf, üstü ikinci sınıf
+            # Binary için etiketler listesinde 2 eleman olmalı
+            tahmin_adi = ayarlar['etiketler'][max_index] if max_index < len(ayarlar['etiketler']) else "Bilinmiyor"
+            final_result = [float(1-skor), float(skor)] # Oranları [Sınıf0, Sınıf1] formatına çevir
+        
+        # Eğer çoklu çıktı varsa (Örn: [0.1, 0.8, 0.1])
         else:
-            tahmin_adi = "Bilinmiyor"
-        
+            max_index = int(np.argmax(result))
+            tahmin_adi = ayarlar['etiketler'][max_index] if max_index < len(ayarlar['etiketler']) else "Bilinmiyor"
+            final_result = result.tolist()
+
+        print(f"   ✅ Sonuç: {tahmin_adi} (Index: {max_index})\n")
+
         return jsonify({
             'status': 'success',
+            'secilen_model': secilen_model_key,
+            'tahmin_adi': tahmin_adi,
             'tahmin_index': max_index,
-            'tahmin_adi': tahmin_adi, # Web sitesi artık bunu okuyacak
-            'oranlar': result
+            'oranlar': final_result
         })
+
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"❌ KRİTİK HATA: {str(e)}") # Hatayı terminalde kırmızı gibi düşün
+        return jsonify({'error': f"Python Hatası: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
